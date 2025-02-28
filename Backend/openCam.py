@@ -75,7 +75,7 @@ while cap.isOpened():
         if announcement != previous_objects.get("text", ""):
             print(announcement)  # Debug print
             engine.say(announcement)
-        engine.runAndWait()  # Speak out loud
+            engine.runAndWait()  # Speak out loud
         previous_announcements["text"] = announcement
 
     # print(f"Detected: {object_name} ({confidence:.2f})")    # Printing this joint to see whats going on
