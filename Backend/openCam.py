@@ -19,6 +19,8 @@ if cap is None or not cap.isOpened():
     print("Error: Could not open the camera.")
     exit()
 
+previous_objects = set()
+
 while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
@@ -63,16 +65,17 @@ while cap.isOpened():
             detected_objects.add(object_name)
             object_directions.append(f"{object_name} {direction} {distance}")
 
-            print(f"Detected: {object_name} ({confidence:.2f}) {direction} {direction}")  # Debug print
+           # print(f"Detected: {object_name} ({confidence:.2f}) {direction}")  # Debug print
 
     # Announce detected objects
-    if detected_objects:
-        announcement = "I see " + ", ".join(object_directions)
+    new_objects = detected_objects - previous_objects
+    if new_objects:
+        announcement = "I see " + ", ".join(new_objects)
         print(announcement)  # Debug print
         engine.say(announcement)
         engine.runAndWait()  # Speak out loud
 
-    print(f"Detected: {object_name} ({confidence:.2f})")    # Printing this joint to see whats going on
+    # print(f"Detected: {object_name} ({confidence:.2f})")    # Printing this joint to see whats going on
 
     print(f"Detected objects: {', '.join(detected_objects)}")
 
