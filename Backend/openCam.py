@@ -69,14 +69,18 @@ while cap.isOpened():
            # print(f"Detected: {object_name} ({confidence:.2f}) {direction}")  # Debug print
 
     # Announce detected objects
-    new_objects = detected_objects - previous_objects
-    if new_objects:
-        announcement = "I see " + ", ".join(new_objects)
-        if announcement != previous_objects.get("text", ""):
+    if detected_objects:
+        announcement = "I see " + ", ".join(object_directions)
+        if announcement != previous_announcements.get("text", ""):
             print(announcement)  # Debug print
             engine.say(announcement)
             engine.runAndWait()  # Speak out loud
-        previous_announcements["text"] = announcement
+            previous_announcements["text"] = announcement
+    else:
+        print("No objects detected.")
+        
+
+    previous_objects = detected_objects
 
     # print(f"Detected: {object_name} ({confidence:.2f})")    # Printing this joint to see whats going on
 
