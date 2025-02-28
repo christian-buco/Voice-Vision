@@ -16,8 +16,18 @@ while cap.isOpened():
 
     results = model(frame)
 
-    for r in results: 
-        frame = r.plot()
+    for r in results:       # results is the joint that stores objects in the frame
+        frame = r.plot()    # r has the detection info for the entire frame
+        detected_objects = []
+        for box in r.boxes:
+            class_id = int(box.cls[0])  
+            confidence = box.conf[0]   
+            object_name = model.names[class_id]  
+            detected_objects.append(object_name) 
+
+            print(f"Detected: {object_name} ({confidence:.2f})")    # Printing this joint to see whats going on
+
+        print(f"Detected objects: {', '.join(detected_objects)}")
 
     cv2.imshow("AI Glasses Feed", frame)
 
