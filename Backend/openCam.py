@@ -24,9 +24,15 @@ while cap.isOpened():
     if not ret:
         break
 
+    height, width, _ = frame.shape
+    left_region = width // 3
+    right_region = 2 * (width // 3)
+
     results = model(frame)
 
     detected_objects = set()
+    object_directions = []
+
     for r in results:       # results is the joint that stores objects in the frame
         frame = r.plot()    # r has the detection info for the entire frame
 
@@ -34,11 +40,26 @@ while cap.isOpened():
             class_id = int(box.cls[0])  ## class Id
             confidence = box.conf[0]   
             object_name = model.names[class_id]  
-            detected_objects.add(object_name) 
+            
+            # Get bounding box center
+            x_center = (box.xyxy[0][0] + box.xyxy[0][2]) / 2 
 
-            # Announce detected objects
+            # Determine the direction
+            if x_center < left_region:
+                direction = "on the left"
+            elif x_center > right_region:
+                direction = "on the right"
+            else:
+                direction = "in the center"
+
+            detected_objects.add(object_name)
+            object_directions.append(f"{object_name} {direction}")
+
+            print(f"Detected: {object_name} ({confidence:.2f}) {direction}")  # Debug print
+
+    # Announce detected objects
     if detected_objects:
-        announcement = "I see " + ", ".join(detected_objects)
+        announcement = "I see " + ", ".join(object_directions)
         print(announcement)  # Debug print
         engine.say(announcement)
         engine.runAndWait()  # Speak out loud
