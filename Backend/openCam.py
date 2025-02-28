@@ -20,6 +20,7 @@ if cap is None or not cap.isOpened():
     exit()
 
 previous_objects = set()
+previous_announcements = {}
 
 while cap.isOpened():
     ret, frame = cap.read()
@@ -71,9 +72,11 @@ while cap.isOpened():
     new_objects = detected_objects - previous_objects
     if new_objects:
         announcement = "I see " + ", ".join(new_objects)
-        print(announcement)  # Debug print
-        engine.say(announcement)
+        if announcement != previous_objects.get("text", ""):
+            print(announcement)  # Debug print
+            engine.say(announcement)
         engine.runAndWait()  # Speak out loud
+        previous_announcements["text"] = announcement
 
     # print(f"Detected: {object_name} ({confidence:.2f})")    # Printing this joint to see whats going on
 
