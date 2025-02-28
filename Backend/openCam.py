@@ -43,6 +43,14 @@ while cap.isOpened():
             
             # Get bounding box center
             x_center = (box.xyxy[0][0] + box.xyxy[0][2]) / 2 
+            box_width = box.xyxy[0][2] - box.xyxy[0][0]
+
+            if box_width > width * 0.5:
+                distance = "very close"
+            if box_width < width * 0.3:
+                distance = "near"
+            else:
+                distance = "far"
 
             # Determine the direction
             if x_center < left_region:
@@ -53,9 +61,9 @@ while cap.isOpened():
                 direction = "in the center"
 
             detected_objects.add(object_name)
-            object_directions.append(f"{object_name} {direction}")
+            object_directions.append(f"{object_name} {direction} {distance}")
 
-            print(f"Detected: {object_name} ({confidence:.2f}) {direction}")  # Debug print
+            print(f"Detected: {object_name} ({confidence:.2f}) {direction} {direction}")  # Debug print
 
     # Announce detected objects
     if detected_objects:
