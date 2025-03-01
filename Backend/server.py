@@ -1,37 +1,52 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
 import cv2
+import base64
 import numpy as np
-import torch
+from flask import Flask, request, jsonify
 from ultralytics import YOLO
+from PIL import Image
+from io import BytesIO
 
+# Initialize Flask app
 app = Flask(__name__)
-CORS(app)
 
-# Load YOLOv8 model
+# Load the YOLO model (ensure "yolov8n.pt" is in your working directory)
 model = YOLO("yolov8n.pt")
 
-@app.route('/detect', methods=['POST'])
-def detect_objects():
-    if 'image' not in request.files:
-        return jsonify({"error": "No image provided"}), 400
+def process_frame(frame_b64):
+    # Decode the base64 string into bytes and open as an image
+    img_data = base64.b64decode(frame_b64)
+    img = Image.open(BytesIO(img_data)).convert("RGB")
     
-    file = request.files['image']
-    file_bytes = np.frombuffer(file.read(), np.uint8)
-    image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+    # Convert PIL image to OpenCV format (BGR)
+    img_np = np.array(img)
+    img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
 
-    results = model(image)  # Run YOLO on the image
+    # Run YOLO model on the frame
+    results = model(img_bgr)
+    
+    # Annotate the frame with the detections
+    for r in results:
+        img_bgr = r.plot()
+        print(r)
 
-    detections = []
-    for result in results:
-        for box in result.boxes:
-            detections.append({
-                "label": result.names[int(box.cls)],
-                "confidence": float(box.conf),
-                "bbox": box.xyxy.tolist()[0]  # Convert tensor to list
-            })
+    # Encode the processed image to JPEG and then to base64
+    _, buffer = cv2.imencode('.jpg', img_bgr)
+    processed_frame_b64 = base64.b64encode(buffer).decode('utf-8')
+    return processed_frame_b64
 
-    return jsonify({"detections": detections})
+@app.route('/process_frame', methods=['POST'])
+def process_frame_route():
+    data = request.get_json()
+    if not data or 'image' not in data:
+        return jsonify({'error': 'No image provided'}), 400
+
+    frame_b64 = data['image']
+    try:
+        processed_frame_b64 = process_frame(frame_b64)
+        return jsonify({'processedFrame': processed_frame_b64})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    # Run the Flask app on host 0.0.0.0 at port 5000
+    app.run(host='localhost', port=5000)
