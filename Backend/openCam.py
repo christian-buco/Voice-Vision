@@ -7,20 +7,23 @@ model = YOLO("yolov8n.pt")
 # Initialize text-to-speech engine
 engine = pyttsx3.init()
 
+
 for i in range(10):  # Test indexes 0-9
     temp_cap = cv2.VideoCapture(i)
     if temp_cap.isOpened():
         print(f"Camera found at index {i}")
         cap = temp_cap
         break
-    temp_cap.release()  # Change Camera input. Austin uses 2 for his camera. Use 0 or something
+    temp_cap.release()  
+
+# cap = cv2.VideoCapture(2)   # Change Camera input. Austin uses 2 for his camera. Use 0 or something
+
 
 if cap is None or not cap.isOpened():
     print("Error: Could not open the camera.")
     exit()
 
-previous_objects = set()
-previous_announcements = {}
+announced_objects = set()
 
 while cap.isOpened():
     ret, frame = cap.read()
@@ -68,19 +71,20 @@ while cap.isOpened():
 
            # print(f"Detected: {object_name} ({confidence:.2f}) {direction}")  # Debug print
 
+    # Bringing back new_objects so only new objects can be announced 
+    new_objects = detected_objects - announced_objects
+
     # Announce detected objects
-    if detected_objects:
-        announcement = "I see " + ", ".join(object_directions)
-        if announcement != previous_announcements.get("text", ""):
-            print(announcement)  # Debug print
-            engine.say(announcement)
-            engine.runAndWait()  # Speak out loud
-            previous_announcements["text"] = announcement
+    if new_objects:
+        announcement = "I see " + ", ".join([f"{obj}" for obj in new_objects])
+        print(announcement)  # Debug print
+        engine.say(announcement)
+        engine.runAndWait()  # Speak out loud
+        announced_objects.update(new_objects)   # Store that the new object was announced
     else:
         print("No objects detected.")
         
-
-    previous_objects = detected_objects
+    announced_objects.intersection_update(detected_objects)
 
     # print(f"Detected: {object_name} ({confidence:.2f})")    # Printing this joint to see whats going on
 
