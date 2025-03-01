@@ -1,33 +1,90 @@
 import cv2
+import pyttsx3
 from ultralytics import YOLO
 
 model = YOLO("yolov8n.pt")
 
-cap = cv2.VideoCapture(2)  # Change Camera input. Austin uses 2 for his camera. Use 0 or something
+# Initialize text-to-speech engine
+engine = pyttsx3.init()
 
-if not cap.isOpened():
+for i in range(10):  # Test indexes 0-9
+    temp_cap = cv2.VideoCapture(i)
+    if temp_cap.isOpened():
+        print(f"Camera found at index {i}")
+        cap = temp_cap
+        break
+    temp_cap.release()  # Change Camera input. Austin uses 2 for his camera. Use 0 or something
+
+if cap is None or not cap.isOpened():
     print("Error: Could not open the camera.")
     exit()
+
+previous_objects = set()
+previous_announcements = {}
 
 while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
         break
 
+    height, width, _ = frame.shape
+    left_region = width // 3
+    right_region = 2 * (width // 3)
+
     results = model(frame)
+
+    detected_objects = set()
+    object_directions = []
 
     for r in results:       # results is the joint that stores objects in the frame
         frame = r.plot()    # r has the detection info for the entire frame
-        detected_objects = []
+
         for box in r.boxes:
-            class_id = int(box.cls[0])  
+            class_id = int(box.cls[0])  ## class Id
             confidence = box.conf[0]   
             object_name = model.names[class_id]  
-            detected_objects.append(object_name) 
+            
+            # Get bounding box center
+            x_center = (box.xyxy[0][0] + box.xyxy[0][2]) / 2 
+            box_width = box.xyxy[0][2] - box.xyxy[0][0]
 
-            print(f"Detected: {object_name} ({confidence:.2f})")    # Printing this joint to see whats going on
+            if box_width > width * 0.5:
+                distance = "very close"
+            if box_width < width * 0.3:
+                distance = "near"
+            else:
+                distance = "far"
 
-        print(f"Detected objects: {', '.join(detected_objects)}")
+            # Determine the direction
+            if x_center < left_region:
+                direction = "on the left"
+            elif x_center > right_region:
+                direction = "on the right"
+            else:
+                direction = "in the center"
+
+            detected_objects.add(object_name)
+            object_directions.append(f"{object_name} {direction} {distance}")
+
+           # print(f"Detected: {object_name} ({confidence:.2f}) {direction}")  # Debug print
+
+    # Announce detected objects
+    if detected_objects:
+        announcement = "I see " + ", ".join(object_directions)
+        if announcement != previous_announcements.get("text", ""):
+            print(announcement)  # Debug print
+            engine.say(announcement)
+            engine.runAndWait()  # Speak out loud
+            previous_announcements["text"] = announcement
+    else:
+        print("No objects detected.")
+        
+
+    previous_objects = detected_objects
+
+    # print(f"Detected: {object_name} ({confidence:.2f})")    # Printing this joint to see whats going on
+
+    print(f"Detected objects: {', '.join(detected_objects)}")
 
     cv2.imshow("AI Glasses Feed", frame)
 
