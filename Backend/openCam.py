@@ -21,10 +21,11 @@ def speak_text():
     while True:
         text = speaking_queue.get()
         if text is None:
-            break
+            continue  # Skip processing if None is retrieved
+        print(f"🔊 Speaking: {text}")  # Debugging print
         engine.say(text)
         engine.runAndWait()
-        speaking_queue.task_done()
+
 
 speech_thread = threading.Thread(target=speak_text, daemon=True)
 speech_thread.start()
@@ -35,7 +36,7 @@ for index, name in enumerate(sr.Microphone.list_microphone_names()):
     print(f"{index}: {name}")
 
 # Select the correct microphone
-MIC_INDEX = 7  # Ensure this is correct based on the printed list
+MIC_INDEX = 0  # Ensure this is correct based on the printed list
 recognizer = sr.Recognizer()
 mic = sr.Microphone(device_index=MIC_INDEX)
 
@@ -65,19 +66,25 @@ def listen_for_command():
 
             print("🎧 Listening... Say 'what's in front of me?'")
             try:
-                audio = recognizer.listen(source, timeout=30)  # Increased timeout
-                print("✅ Audio captured, processing...")
+                audio = recognizer.listen(source, timeout=10)  # Increased timeout
                 command = recognizer.recognize_google(audio).lower()
                 print("🔊 You said:", command)
 
                 if "what's in front of me" in command:
                     process_speech_command()
+
+                # Add a small delay to prevent rapid looping in case of continuous speech
+                time.sleep(1)
+
             except sr.WaitTimeoutError:
                 print("⏳ Timeout: No speech detected.")
             except sr.UnknownValueError:
                 print("❌ Didn't catch that. Try again.")
             except sr.RequestError:
                 print("❌ Speech Recognition service error.")
+                time.sleep(5)
+            except Exception as e:
+                print(f"⚠️ Unexpected error: {e}")  # Ensures the loop never exits
 
 # Function to process the speech command
 def process_speech_command():
@@ -92,7 +99,9 @@ def process_speech_command():
         obj_name, (direction, distance) = prioritized_object
         announcement = f"I see {obj_name} {direction}, {distance}."
         print("📢 Announcing:", announcement)
-        speaking_queue.put(announcement)  # Add to speech queue
+
+        if not speaking_queue.full():  # Avoid blocking if the queue is full
+            speaking_queue.put(announcement)
 
 # Start voice command listener in a separate thread (prevents blocking)
 speech_listener_thread = threading.Thread(target=listen_for_command, daemon=True)
@@ -103,6 +112,7 @@ detected_objects = {}  # Stores detected objects
 while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
+        print("⚠️ Camera feed stopped! Exiting program...")
         break
 
     height, width, _ = frame.shape
@@ -116,10 +126,10 @@ while cap.isOpened():
         frame = r.plot()
         for box in r.boxes:
             class_id = int(box.cls[0])
-            object_name = model.names[class_id]
+            object_name = model.model.names[class_id]
 
-            x_center = (box.xyxy[0][0] + box.xyxy[0][2]) / 2
-            box_width = box.xyxy[0][2] - box.xyxy[0][0]
+            x_center = box.xywh[0][0]  # x_center is already available
+            box_width = box.xywh[0][2]  # Width of bounding box
 
             # Estimate distance
             if box_width > width * 0.5:
@@ -139,13 +149,18 @@ while cap.isOpened():
 
             detected_objects[object_name] = (direction, distance)
 
-    print("👀 Detected objects:", detected_objects)
+    # print("👀 Detected objects:", detected_objects)
     cv2.imshow("AI Glasses Feed", frame)
 
     # Press 'q' to quit
     if cv2.waitKey(1) & 0xFF == ord('q'):
+        print("🛑 Exiting program via user input (q)")
         break
 
+# Keep threads running
+speech_thread.join()
+speech_listener_thread.join()
+
+print("❌ Exiting: Cleaning up camera and windows.")
 cap.release()
 cv2.destroyAllWindows()
-speaking_queue.put(None)  # Stop speech thread
