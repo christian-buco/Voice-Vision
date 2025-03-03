@@ -40,7 +40,7 @@ MIC_INDEX = 0  # Ensure this is correct based on the printed list
 recognizer = sr.Recognizer()
 mic = sr.Microphone(device_index=MIC_INDEX)
 
-recognizer.energy_threshold = 100  # Lowered threshold
+recognizer.energy_threshold = 300  # Lowered threshold
 recognizer.dynamic_energy_threshold = True
 
 # Auto-detect camera
@@ -57,23 +57,26 @@ if cap is None or not cap.isOpened():
     print("❌ Error: Could not open the camera.")
     exit()
 
-# Function to continuously listen for speech commands (in a separate thread)
 def listen_for_command():
-    while True:
-        with mic as source:
-            print("🎤 Adjusting for background noise...")
-            recognizer.adjust_for_ambient_noise(source, duration=2)  # Increased to 2 sec
+    with mic as source:
+        print("🎤 Adjusting for background noise... (only once)")
+        recognizer.adjust_for_ambient_noise(source, duration=1)  # Reduce duration
 
-            print("🎧 Listening... Say 'what's in front of me?'")
+    while True:
+        print("🎧 Listening... Say 'what's in front of me?'")
+        with mic as source:
             try:
-                audio = recognizer.listen(source, timeout=10)  # Increased timeout
+                audio = recognizer.listen(source, timeout=5)
                 command = recognizer.recognize_google(audio).lower()
                 print("🔊 You said:", command)
 
-                if "what's in front of me" in command:
+                # Allow partial phrase matches
+                if "what's in front" in command:
+                    print("✅ Detected trigger phrase! Processing command...")
                     process_speech_command()
+                else:
+                    print(f"❌ Phrase not matched. Heard: {command}")
 
-                # Add a small delay to prevent rapid looping in case of continuous speech
                 time.sleep(1)
 
             except sr.WaitTimeoutError:
@@ -84,7 +87,8 @@ def listen_for_command():
                 print("❌ Speech Recognition service error.")
                 time.sleep(5)
             except Exception as e:
-                print(f"⚠️ Unexpected error: {e}")  # Ensures the loop never exits
+                print(f"⚠️ Unexpected error: {e}")
+
 
 # Function to process the speech command
 def process_speech_command():
