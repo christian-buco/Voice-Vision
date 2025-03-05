@@ -12,7 +12,13 @@ import queue
 import time
 from ultralytics import YOLO
 
-model = YOLO("yolov8n.pt")
+try:
+    model = YOLO("yolov8n.pt")
+    print("Loaded Model")
+except Exception as e:
+    print(f"error loading model: {e}")
+    exit()
+
 
 # Initialize text-to-speech engine
 engine = pyttsx3.init(driverName='espeak')
@@ -58,6 +64,7 @@ CONFIDENCE_THRESHOLD = 0.5  # Minimum confidence required to announce an object
 while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
+        print("Failed to capture frame")
         break
 
     height, width, _ = frame.shape
