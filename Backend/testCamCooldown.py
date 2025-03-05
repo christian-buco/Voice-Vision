@@ -15,7 +15,7 @@ from ultralytics import YOLO
 model = YOLO("yolov8n.pt")
 
 # Initialize text-to-speech engine
-engine = pyttsx3.init()
+engine = pyttsx3.init(driverName='espeak')
 speech_queue = queue.Queue()
 
 # Background speech worker thread
