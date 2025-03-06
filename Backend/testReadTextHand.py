@@ -18,7 +18,11 @@ import queue
 
 # Initialize EasyOCR, MediaPipe, and pyttsx3
 reader = easyocr.Reader(['en'])
-engine = pyttsx3.init(driverName='espeak')
+engine = pyttsx3.init()
+engine.setProperty('rate', 150)
+engine.setProperty('volume', 1)
+engine.setProperty('voice', 'english')
+
 
 mp_hands = mp.solutions.hands
 mp_drawing = mp.solutions.drawing_utils

@@ -5,6 +5,7 @@ This file is detects objects and says the object out loud.
 - Forgets an object if not in frame for 3 seconds to avoid repeating (can adjust)
 - Add confidence threshold to say things its more sure of (can adjus)
 """
+from picamera2 import Picamera2
 import cv2
 import pyttsx3
 import threading
@@ -21,7 +22,10 @@ except Exception as e:
 
 
 # Initialize text-to-speech engine
-engine = pyttsx3.init(driverName='espeak')
+engine = pyttsx3.init()
+engine.setProperty('rate', 150)
+engine.setProperty('volume', 1)
+engine.setProperty('voice', 'english')
 speech_queue = queue.Queue()
 
 # Background speech worker thread
@@ -42,18 +46,10 @@ def speak(text):
     speech_queue.put(text)
 
 # Find Camera
-cap = None
-for i in range(10):  # Test indexes 0-9
-    temp_cap = cv2.VideoCapture(i)
-    if temp_cap.isOpened():
-        print(f"Camera found at index {i}")
-        cap = temp_cap
-        break
-    temp_cap.release()
-
-if cap is None or not cap.isOpened():
-    print("Error: Could not open the camera.")
-    exit()
+picam2 = Picamera2()
+config = picam2.create_preview_configuration(main={"size": (640, 480), "format": "RGB888"})
+picam2.configure(config)
+picam2.start()
 
 # Tracking objects
 announced_objects = set()  # Objects already announced
@@ -61,13 +57,10 @@ last_seen = {}  # Last seen time of objects
 FORGET_TIME = 3  # Forget objects after 3 seconds
 CONFIDENCE_THRESHOLD = 0.5  # Minimum confidence required to announce an object
 
-while cap.isOpened():
-    ret, frame = cap.read()
-    if not ret:
-        print("Failed to capture frame")
-        break
-
+while True:
+    frame = picam2.capture_array()
     height, width, _ = frame.shape
+
     results = model(frame)
 
     detected_objects = set()  # Tracks objects in the current frame
@@ -110,7 +103,7 @@ while cap.isOpened():
         break
 
 # Cleanup
-cap.release()
+picam2.close()
 cv2.destroyAllWindows()
 speech_queue.put(None)  
 speech_thread.join()
