@@ -2,27 +2,180 @@ import cv2
 import mediapipe as mp
 import easyocr
 import numpy as np
-from matplotlib import pyplot as plt
+import pyttsx3
 import threading
 import time
-# import pytesseract
+import queue
+from matplotlib import pyplot as plt
+import speech_recognition as sr
+from ultralytics import YOLO
+
+model = YOLO("yolov8n.pt")
+
+cap = cv2.VideoCapture(1)  # Open webcam
 
 # Initialize Mediapipe Hands
 mp_hands = mp.solutions.hands
 mp_drawing = mp.solutions.drawing_utils
 
-cap = cv2.VideoCapture(1)  # Open webcam
 reader = easyocr.Reader(['en'])
+engine = pyttsx3.init()
+
+engine.setProperty('rate', 150)
+
+# Queue for speech announcements
+speaking_queue = queue.Queue()
+
+# Function to announce detected objects
+def speak_text():
+    while True:
+        text = speaking_queue.get()
+        if text is None:
+            continue  # Skip processing if None is retrieved
+        print(f"🔊 Speaking: {text}")  # Debugging print
+        engine.say(text)
+        engine.runAndWait()
+
+
+speech_thread = threading.Thread(target=speak_text, daemon=True)
+speech_thread.start()
+
+# Print available microphones
+print("🔍 Available Microphones:")
+for index, name in enumerate(sr.Microphone.list_microphone_names()):
+    print(f"{index}: {name}")
+
+# Select the correct microphone
+MIC_INDEX = 0  # Ensure this is correct based on the printed list
+recognizer = sr.Recognizer()
+mic = sr.Microphone(device_index=MIC_INDEX)
+
+recognizer.energy_threshold = 300  # Lowered threshold
+recognizer.dynamic_energy_threshold = True
 
 detected_text = ""
 txt_lock = threading.Lock()
 
-def process_txt(roi):
-    global detected_text
-    gray_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-    results = reader.readtext(gray_roi, detail=0)
-    with txt_lock:
-        detected_text = " ".join(results).strip() if results else ""
+def listen_for_command():
+    with mic as source:
+        print("🎤 Adjusting for background noise... (only once)")
+        recognizer.adjust_for_ambient_noise(source, duration=1)  # Reduce duration
+
+    while True:
+        print("🎧 Listening... Say 'what's in front of me?'")
+        with mic as source:
+            try:
+                audio = recognizer.listen(source, timeout=5)
+                command = recognizer.recognize_google(audio).lower()
+                print("🔊 You said:", command)
+
+                # Allow partial phrase matches
+                if "what's in front" in command:
+                    print("✅ Detected trigger phrase! Processing command...")
+                    process_speech_command()
+                else:
+                    print(f"❌ Phrase not matched. Heard: {command}")
+
+                time.sleep(1)
+
+            except sr.WaitTimeoutError:
+                print("⏳ Timeout: No speech detected.")
+            except sr.UnknownValueError:
+                print("❌ Didn't catch that. Try again.")
+            except sr.RequestError:
+                print("❌ Speech Recognition service error.")
+                time.sleep(5)
+            except Exception as e:
+                print(f"⚠️ Unexpected error: {e}")
+
+# Function to process the speech command
+def process_speech_command():
+    global detected_objects
+    if detected_objects:
+        # Prioritize the closest object
+        prioritized_object = min(
+            detected_objects.items(),
+            key=lambda x: {"very close": 1, "near": 2, "far": 3}[x[1][1]]
+        )
+
+        obj_name, (direction, distance) = prioritized_object
+        announcement = f"I see {obj_name} {direction}, {distance}."
+        print("📢 Announcing:", announcement)
+
+        if not speaking_queue.full():  # Avoid blocking if the queue is full
+            speaking_queue.put(announcement)
+
+# Threaded speech function
+def speak(text):
+    thread = threading.Thread(target=lambda: (engine.say(text), engine.runAndWait()), daemon=True)
+    thread.start()
+
+# Track last spoken text and cooldown
+last_spoken_text = ""
+last_spoken_time = 0
+cooldown_seconds = 5  # Cooldown for last spoken. Adjust if needed
+
+# Thread-safe queue for OCR processing
+ocr_queue = queue.Queue()
+ocr_thread_running = False  # Ensure only one OCR thread runs at a time
+
+# OCR frequency control
+ocr_frame_skip = 12  # Adjust if you want
+frame_count = 0
+
+# Function to process OCR asynchronously
+def ocr_worker():
+    global ocr_thread_running, last_spoken_text, last_spoken_time
+    while True:
+        roi = ocr_queue.get()  # Get ROI from the queue
+        if roi is None:  # Stop thread if None is received
+            break
+
+        # Region of Interest (ROI). Text detection size
+        # resized_roi = cv2.resize(roi, (1200, 1200))  
+
+        # Convert to grayscale and enhance contrast, helps with text recognition
+        gray_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+        _, thresh_roi = cv2.threshold(gray_roi, 100, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+        # Refinements to OCR performance
+        results = reader.readtext(
+            thresh_roi,
+            detail=0,
+            contrast_ths=0.3,  # Lower contrast threshold
+            text_threshold=0.4,  # Accept lower confidence text
+            link_threshold=0.2   # More flexible word linking
+        )
+
+        if results:
+            detected_text = " ".join(results).strip()
+            current_time = time.time()
+
+            # Speak only if new text is detected or cooldown is over
+            if detected_text and (detected_text != last_spoken_text or current_time - last_spoken_time > cooldown_seconds):
+                speak(detected_text)
+                last_spoken_text = detected_text
+                last_spoken_time = current_time
+
+        ocr_thread_running = False  # Allow the next OCR request
+
+# Start OCR processing thread
+ocr_processing_thread = threading.Thread(target=ocr_worker, daemon=True)
+ocr_processing_thread.start()
+
+
+# def process_txt(roi):
+#     global detected_text
+#     gray_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+#     results = reader.readtext(gray_roi, detail=0)
+#     with txt_lock:
+#         detected_text = " ".join(results).strip() if results else ""
+
+# Start voice command listener in a separate thread (prevents blocking)
+speech_listener_thread = threading.Thread(target=listen_for_command, daemon=True)
+speech_listener_thread.start()
+
+detected_objects = {}  # Stores detected objects
 
 with mp_hands.Hands(max_num_hands=1,min_detection_confidence=0.8, min_tracking_confidence=0.8) as hands:
     prev_time = 0
@@ -33,11 +186,45 @@ with mp_hands.Hands(max_num_hands=1,min_detection_confidence=0.8, min_tracking_c
             break
 
         h, w, _ = frame.shape
+
+        left_region = w // 3
+        right_region = 2 * (w // 3)
+
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = hands.process(rgb_frame)
 
+        results_objects = model(frame)
+        detected_objects.clear()  # Reset detected objects each frame
+
         text_detected = False
         roi = None
+
+        for r in results_objects:
+            frame = r.plot()
+            for box in r.boxes:
+                class_id = int(box.cls[0])
+                object_name = model.model.names[class_id]
+
+                x_center = box.xywh[0][0]  # x_center is already available
+                box_width = box.xywh[0][2]  # Width of bounding box
+
+                # Estimate distance
+                if box_width > w * 0.5:
+                    distance = "very close"
+                elif box_width < w * 0.3:
+                    distance = "far"
+                else:
+                    distance = "near"
+
+                # Determine direction
+                if x_center < left_region:
+                    direction = "on the left"
+                elif x_center > right_region:
+                    direction = "on the right"
+                else:
+                    direction = "in the center"
+
+                detected_objects[object_name] = (direction, distance)
 
         if results.multi_hand_landmarks:
             for hand_landmarks in results.multi_hand_landmarks:
@@ -52,38 +239,24 @@ with mp_hands.Hands(max_num_hands=1,min_detection_confidence=0.8, min_tracking_c
 
                 # Get the position of index tip
                 x, y = int(index_tip.x * w), int(index_tip.y * h)
-                z = index_tip.z
 
                 #region slightly in front of the fingertip
-                roi_size = 200
-                x1, y1 = max(0, x - roi_size // 2), max(0, y - roi_size - 20)
-                x2, y2 = min(w, x + roi_size // 2), min(h, y - 20)
+                roi_size = 150
+                roi_width = 125
+                roi_height = 75
+                x1, y1 = max(0, x - roi_width // 2), max(0, y - roi_height - 20)
+                x2, y2 = min(w, x + roi_width // 2), min(h, y - 20)
 
                 roi = frame[y1:y2, x1:x2]
 
-                if (roi.size > 0 and index_tip.y < index_mcp.y and  
-                    middle_tip.y > index_mcp.y and
-                    ring_tip.y > index_mcp.y and
-                    pinky_tip.y > index_mcp.y):
-                    text_detected = True
-                    threading.Thread(target=process_txt, args=(roi,), daemon=True).start()
-                    cv2.rectangle(frame, (x1, y1), (x2, y2), (255,0,0), 2)
+                # Limit OCR calls to every certain number of frames (12 rn)
+                if roi.size > 0 and not ocr_thread_running and frame_count % ocr_frame_skip == 0:
+                    ocr_thread_running = True  # Mark OCR as running
+                    ocr_queue.put(roi)  # Add ROI to the queue
 
-                # Index finger pointing up
-                # Check if the index finger is extended while others are folded
-                # if (index_tip.y < index_mcp.y and  
-                #     middle_tip.y > index_mcp.y and
-                #     ring_tip.y > index_mcp.y and
-                #     pinky_tip.y > index_mcp.y):
-                
+                cv2.rectangle(frame, (x1, y1), (x2, y2), (255,0,0), 2)
                 # Draw a circle at the index finger tip
                 cv2.circle(frame, (x, y), 10, (0, 0, 255), -1)
-
-        with txt_lock:
-            if detected_text:
-                cv2.putText(frame, f"Text: {detected_text}", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-            elif not text_detected:
-                detected_text = ""
 
         end_time = time.time()
         fps = 1/(end_time - start_time)
@@ -95,6 +268,13 @@ with mp_hands.Hands(max_num_hands=1,min_detection_confidence=0.8, min_tracking_c
 
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
+
+ocr_queue.put(None)
+ocr_processing_thread.join()
+# Keep threads running
+speech_thread.join()
+speech_listener_thread.join()
+del mic
 
 cap.release()
 cv2.destroyAllWindows()
